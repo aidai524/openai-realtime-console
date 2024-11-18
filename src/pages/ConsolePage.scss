@@ -21,6 +21,7 @@
     align-items: center;
     padding: 8px 16px;
     min-height: 40px;
+    gap: 16px;
     .content-title {
       flex-grow: 1;
       display: flex;
@@ -30,6 +31,9 @@
         width: 24px;
         height: 24px;
       }
+    }
+    .content-api-key {
+      margin-right: 8px;
     }
   }
 
@@ -129,19 +133,24 @@
       }
       & > div.events {
         overflow: hidden;
-      }
-      .events {
-        border-top: 1px solid #e7e7e7;
-      }
-      .conversation {
-        display: flex;
-        flex-shrink: 0;
-        width: 100%;
-        overflow: hidden;
+        flex-grow: 0;
         height: 200px;
         min-height: 0;
         max-height: 200px;
         border-top: 1px solid #e7e7e7;
+      }
+      .conversation {
+        display: flex;
+        flex-direction: column;
+        flex-grow: 1;
+        flex-shrink: 1;
+        width: 100%;
+        overflow: hidden;
+        border-top: 1px solid #e7e7e7;
+        
+        .content-block-body {
+          overflow-y: auto;
+        }
       }
     }
   }

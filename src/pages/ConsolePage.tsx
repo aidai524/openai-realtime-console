@@ -125,6 +125,9 @@ export function ConsolePage() {
   });
   const [marker, setMarker] = useState<Coordinates | null>(null);
 
+  // 添加新的状态控制 events 面板显示/隐藏
+  const [showEvents, setShowEvents] = useState(false);
+
   /**
    * Utility for formatting the timing of logs
    */
@@ -380,80 +383,10 @@ export function ConsolePage() {
     client.updateSession({ instructions: instructions });
     // Set transcription, otherwise we don't get user transcriptions back
     client.updateSession({ input_audio_transcription: { model: 'whisper-1' } });
-
-    // Add tools
-    client.addTool(
-      {
-        name: 'set_memory',
-        description: 'Saves important data about the user into memory.',
-        parameters: {
-          type: 'object',
-          properties: {
-            key: {
-              type: 'string',
-              description:
-                'The key of the memory value. Always use lowercase and underscores, no other characters.',
-            },
-            value: {
-              type: 'string',
-              description: 'Value can be anything represented as a string',
-            },
-          },
-          required: ['key', 'value'],
-        },
-      },
-      async ({ key, value }: { [key: string]: any }) => {
-        setMemoryKv((memoryKv) => {
-          const newKv = { ...memoryKv };
-          newKv[key] = value;
-          return newKv;
-        });
-        return { ok: true };
-      }
-    );
-    client.addTool(
-      {
-        name: 'get_weather',
-        description:
-          'Retrieves the weather for a given lat, lng coordinate pair. Specify a label for the location.',
-        parameters: {
-          type: 'object',
-          properties: {
-            lat: {
-              type: 'number',
-              description: 'Latitude',
-            },
-            lng: {
-              type: 'number',
-              description: 'Longitude',
-            },
-            location: {
-              type: 'string',
-              description: 'Name of the location',
-            },
-          },
-          required: ['lat', 'lng', 'location'],
-        },
-      },
-      async ({ lat, lng, location }: { [key: string]: any }) => {
-        setMarker({ lat, lng, location });
-        setCoords({ lat, lng, location });
-        const result = await fetch(
-          `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,wind_speed_10m`
-        );
-        const json = await result.json();
-        const temperature = {
-          value: json.current.temperature_2m as number,
-          units: json.current_units.temperature_2m as string,
-        };
-        const wind_speed = {
-          value: json.current.wind_speed_10m as number,
-          units: json.current_units.wind_speed_10m as string,
-        };
-        setMarker({ lat, lng, location, temperature, wind_speed });
-        return json;
-      }
-    );
+    
+    // 设置默认为 vad 模式
+    changeTurnEndType('server_vad');
+    setCanPushToTalk(false);  // 关闭 push-to-talk 按钮
 
     // handle realtime events from client + server for event logging
     client.on('realtime.event', (realtimeEvent: RealtimeEvent) => {
@@ -507,8 +440,8 @@ export function ConsolePage() {
     <div data-component="ConsolePage">
       <div className="content-top">
         <div className="content-title">
-          <img src="/openai-logomark.svg" />
-          <span>realtime console</span>
+          <img src="/pluto-logo.svg" />
+          <span>Pluto Speaker</span>
         </div>
         <div className="content-api-key">
           {!LOCAL_RELAY_SERVER_URL && (
@@ -521,83 +454,16 @@ export function ConsolePage() {
             />
           )}
         </div>
+        {/* 添加切换 events 面板的按钮 */}
+        <Button
+          label={showEvents ? 'Hide Events' : 'Show Events'}
+          buttonStyle="regular"
+          onClick={() => setShowEvents(!showEvents)}
+        />
       </div>
       <div className="content-main">
         <div className="content-logs">
-          <div className="content-block events">
-            <div className="visualization">
-              <div className="visualization-entry client">
-                <canvas ref={clientCanvasRef} />
-              </div>
-              <div className="visualization-entry server">
-                <canvas ref={serverCanvasRef} />
-              </div>
-            </div>
-            <div className="content-block-title">events</div>
-            <div className="content-block-body" ref={eventsScrollRef}>
-              {!realtimeEvents.length && `awaiting connection...`}
-              {realtimeEvents.map((realtimeEvent, i) => {
-                const count = realtimeEvent.count;
-                const event = { ...realtimeEvent.event };
-                if (event.type === 'input_audio_buffer.append') {
-                  event.audio = `[trimmed: ${event.audio.length} bytes]`;
-                } else if (event.type === 'response.audio.delta') {
-                  event.delta = `[trimmed: ${event.delta.length} bytes]`;
-                }
-                return (
-                  <div className="event" key={event.event_id}>
-                    <div className="event-timestamp">
-                      {formatTime(realtimeEvent.time)}
-                    </div>
-                    <div className="event-details">
-                      <div
-                        className="event-summary"
-                        onClick={() => {
-                          // toggle event details
-                          const id = event.event_id;
-                          const expanded = { ...expandedEvents };
-                          if (expanded[id]) {
-                            delete expanded[id];
-                          } else {
-                            expanded[id] = true;
-                          }
-                          setExpandedEvents(expanded);
-                        }}
-                      >
-                        <div
-                          className={`event-source ${
-                            event.type === 'error'
-                              ? 'error'
-                              : realtimeEvent.source
-                          }`}
-                        >
-                          {realtimeEvent.source === 'client' ? (
-                            <ArrowUp />
-                          ) : (
-                            <ArrowDown />
-                          )}
-                          <span>
-                            {event.type === 'error'
-                              ? 'error!'
-                              : realtimeEvent.source}
-                          </span>
-                        </div>
-                        <div className="event-type">
-                          {event.type}
-                          {count && ` (${count})`}
-                        </div>
-                      </div>
-                      {!!expandedEvents[event.event_id] && (
-                        <div className="event-payload">
-                          {JSON.stringify(event, null, 2)}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          {/* 把 conversation 移到上面 */}
           <div className="content-block conversation">
             <div className="content-block-title">conversation</div>
             <div className="content-block-body" data-conversation-content>
@@ -662,9 +528,88 @@ export function ConsolePage() {
               })}
             </div>
           </div>
+
+          {/* events 部分移到下面并保持条件渲染 */}
+          {showEvents && (
+            <div className="content-block events">
+              <div className="visualization">
+                <div className="visualization-entry client">
+                  <canvas ref={clientCanvasRef} />
+                </div>
+                <div className="visualization-entry server">
+                  <canvas ref={serverCanvasRef} />
+                </div>
+              </div>
+              <div className="content-block-title">events</div>
+              <div className="content-block-body" ref={eventsScrollRef}>
+                {!realtimeEvents.length && `awaiting connection...`}
+                {realtimeEvents.map((realtimeEvent, i) => {
+                  const count = realtimeEvent.count;
+                  const event = { ...realtimeEvent.event };
+                  if (event.type === 'input_audio_buffer.append') {
+                    event.audio = `[trimmed: ${event.audio.length} bytes]`;
+                  } else if (event.type === 'response.audio.delta') {
+                    event.delta = `[trimmed: ${event.delta.length} bytes]`;
+                  }
+                  return (
+                    <div className="event" key={event.event_id}>
+                      <div className="event-timestamp">
+                        {formatTime(realtimeEvent.time)}
+                      </div>
+                      <div className="event-details">
+                        <div
+                          className="event-summary"
+                          onClick={() => {
+                            // toggle event details
+                            const id = event.event_id;
+                            const expanded = { ...expandedEvents };
+                            if (expanded[id]) {
+                              delete expanded[id];
+                            } else {
+                              expanded[id] = true;
+                            }
+                            setExpandedEvents(expanded);
+                          }}
+                        >
+                          <div
+                            className={`event-source ${
+                              event.type === 'error'
+                                ? 'error'
+                                : realtimeEvent.source
+                            }`}
+                          >
+                            {realtimeEvent.source === 'client' ? (
+                              <ArrowUp />
+                            ) : (
+                              <ArrowDown />
+                            )}
+                            <span>
+                              {event.type === 'error'
+                                ? 'error!'
+                                : realtimeEvent.source}
+                            </span>
+                          </div>
+                          <div className="event-type">
+                            {event.type}
+                            {count && ` (${count})`}
+                          </div>
+                        </div>
+                        {!!expandedEvents[event.event_id] && (
+                          <div className="event-payload">
+                            {JSON.stringify(event, null, 2)}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="content-actions">
             <Toggle
-              defaultValue={false}
+              defaultValue={true}
               labels={['manual', 'vad']}
               values={['none', 'server_vad']}
               onChange={(_, value) => changeTurnEndType(value)}
@@ -689,40 +634,6 @@ export function ConsolePage() {
                 isConnected ? disconnectConversation : connectConversation
               }
             />
-          </div>
-        </div>
-        <div className="content-right">
-          <div className="content-block map">
-            <div className="content-block-title">get_weather()</div>
-            <div className="content-block-title bottom">
-              {marker?.location || 'not yet retrieved'}
-              {!!marker?.temperature && (
-                <>
-                  <br />
-                  🌡️ {marker.temperature.value} {marker.temperature.units}
-                </>
-              )}
-              {!!marker?.wind_speed && (
-                <>
-                  {' '}
-                  🍃 {marker.wind_speed.value} {marker.wind_speed.units}
-                </>
-              )}
-            </div>
-            <div className="content-block-body full">
-              {coords && (
-                <Map
-                  center={[coords.lat, coords.lng]}
-                  location={coords.location}
-                />
-              )}
-            </div>
-          </div>
-          <div className="content-block kv">
-            <div className="content-block-title">set_memory()</div>
-            <div className="content-block-body content-kv">
-              {JSON.stringify(memoryKv, null, 2)}
-            </div>
           </div>
         </div>
       </div>
